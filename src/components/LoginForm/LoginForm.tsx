@@ -1,15 +1,14 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LoginSchema, loginSchema } from "../../schemas/login.schema";
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { AxiosError } from "axios";
 import { useNavigate } from "react-router-dom"; // Para redirección
 import AuthLayout from "../../layout/AuthLayout.tsx"; // Asegúrate de importar el AuthLayout
 import "./LoginForm.css";
 import authServices from "../../services/auth.services.ts";
-
-// Constantes de URL de la API
-const API_URL = import.meta.env.VITE_API_URL;
+import { AuthContext } from "../../contexts/auth.context.tsx";
+import { User } from "../../types/user.ts";
 
 const Login: React.FC = () => {
   const {
@@ -25,11 +24,11 @@ const Login: React.FC = () => {
   // Manejo de notificaciones
   const [reqError, setReqError] = useState<string | null>(null);
   const [successNotification, setSuccessNotification] = useState<string | null>(null);
+  const { setUser } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const onSubmit = async (credentials: LoginSchema) => {
     try {
-      console.log(API_URL);
       // Usar el servicio para la petición de login
       const response = await authServices.login(credentials);
 
@@ -38,8 +37,18 @@ const Login: React.FC = () => {
         reset(); // Limpiar el formulario
         setSuccessNotification("Inicio de sesión exitoso");
 
-        // Guardar el token en localStorage
+        console.log(response.data);
+        // Guardar el token en localStorage o en un estado global (ejemplo)
         localStorage.setItem("authToken", response.data.token);
+
+        const user: User = {
+          ...response.data.user,
+          _id: response.data.userId,
+        };
+
+        console.log(user);
+        localStorage.setItem("user", JSON.stringify(user));
+        setUser(user);
 
         // Redirigir después de un tiempo
         setTimeout(() => navigate("/"), 2000);
@@ -61,6 +70,14 @@ const Login: React.FC = () => {
 
   return (
     <AuthLayout>
+      {/* Mostrar errores globales en la parte superior */}
+      {reqError && (
+        <div className="form__global-error-container">
+          <span className="form__error-message">{reqError}</span>
+        </div>
+      )}
+
+      {/* Formulario de inicio de sesión */}
       <form
         onSubmit={handleSubmit(onSubmit)}
         className="w-full flex flex-col gap-3 [&>div]:flex [&>div]:flex-col [&>div]:gap-2 [&_label]:text-sm [&_label]:text-slate-800 [&_input]:px-4 [&_input]:py-3 [&_input]:text-sm [&_input]:ring-1 [&_input]:ring-slate-200 [&_input]:rounded-full focus:[&_input]:bg-slate-100 focus:[&_input]:outline-none focus:[&_input]:ring-2 focus:[&_input]:ring-slate-300 [&_input]:cursor-default"
@@ -73,9 +90,6 @@ const Login: React.FC = () => {
             id="email"
             placeholder="john@doe.com"
           />
-          {errors.email && (
-            <span className="form__error-notification">{errors.email.message}</span>
-          )}
         </div>
         <div>
           <label htmlFor="password">Contraseña</label>
@@ -85,9 +99,6 @@ const Login: React.FC = () => {
             id="password"
             placeholder="••••••••"
           />
-          {errors.password && (
-            <span className="form__error-notification">{errors.password.message}</span>
-          )}
         </div>
         <div className="text-right">
           <a
@@ -104,7 +115,7 @@ const Login: React.FC = () => {
         >
           {isSubmitting ? "Iniciando sesión..." : "Inicia sesión"}
         </button>
-        <p className="text-xs text-center">
+        <p className="text-xs text-center mb-10">
           ¿Aún no tienes cuenta?
           <a href="/register" className="font-bold text-primary hover:text-tertiary">
             {" "}
@@ -112,9 +123,24 @@ const Login: React.FC = () => {
           </a>
         </p>
       </form>
-      {reqError && <p className="form__error-notification">{reqError}</p>}
+
+      {/* Mostrar errores específicos de cada campo debajo del formulario */}
+      {errors.email && (
+        <div className="form__error-container">
+          <span className="form__error-message">{errors.email.message}</span>
+        </div>
+      )}
+      {errors.password && (
+        <div className="form__error-container">
+          <span className="form__error-message">{errors.password.message}</span>
+        </div>
+      )}
+
+      {/* Notificación de éxito */}
       {successNotification && (
-        <p className="form__success-notification">{successNotification}</p>
+        <div className="form__success-container">
+          <span className="form__success-message">{successNotification}</span>
+        </div>
       )}
     </AuthLayout>
   );

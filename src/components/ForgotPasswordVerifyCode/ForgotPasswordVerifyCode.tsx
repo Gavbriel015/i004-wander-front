@@ -1,14 +1,26 @@
 import React, { useState, useEffect } from "react";
 import AuthLayout from "../../layout/AuthLayout";
-import { useNavigate } from "react-router-dom"; // Importamos useNavigate para redirigir
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
 
 const ForgotPasswordVerifyCode: React.FC = () => {
-    const [timer, setTimer] = useState(60); // Temporizador para reenvío de código
-    const [resendEnabled, setResendEnabled] = useState(false); // Estado para habilitar el botón de reenvío
-    const [verificationSuccess, setVerificationSuccess] = useState(false); // Estado para manejar el éxito de la verificación
-    const [code, setCode] = useState(""); // Para almacenar el código ingresado
-    const [errorMessage, setErrorMessage] = useState(""); // Para manejar el mensaje de error
-    const navigate = useNavigate(); // Usamos el hook useNavigate para redirigir
+    const navigate = useNavigate();
+    const [timer, setTimer] = useState(60);
+    const [resendEnabled, setResendEnabled] = useState(false);
+    const [code, setCode] = useState("");
+    const [password, setPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [codeError, setCodeError] = useState<string | null>(null);
+    const [passwordError, setPasswordError] = useState<string | null>(null);
+    const [confirmPasswordError, setConfirmPasswordError] = useState<string | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [showModal, setShowModal] = useState(false);
+    const [errorResend, setErrorResend] = useState<string | null>(null);  // Error para reenviar el código
+    const email = localStorage.getItem("userEmail");
+
+    if (!email) {
+        navigate("/forgot-password");
+    }
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -16,62 +28,126 @@ const ForgotPasswordVerifyCode: React.FC = () => {
         }, 1000);
 
         if (timer === 0) {
-            setResendEnabled(true); // Habilitar el botón de reenvío cuando el tiempo se haya agotado
+            setResendEnabled(true);
         }
 
         return () => clearInterval(interval);
     }, [timer]);
 
-    const handleResend = () => {
+    const handleResend = async () => {
         if (timer === 0) {
-            console.log("Código reenviado");
-            setTimer(60);
-            setResendEnabled(false); // Deshabilitar el botón de reenvío hasta que pasen otros 60 segundos
+            try {
+                const apiUrl = "http://localhost:5005/api/recovery/forgot-password";
+                const response = await axios.post(apiUrl, { email });
+
+                if (response.status === 200) {
+                    setTimer(60);
+                    setResendEnabled(false);
+                    setErrorResend(null);
+                    console.log("Código reenviado con éxito");
+                }
+            } catch (error: any) {
+                console.error("Error al reenviar el código:", error);
+                setErrorResend("Hubo un error al reenviar el código. Intenta nuevamente.");
+            }
         }
     };
 
-    const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
+    const validatePassword = (password: string) => {
+        // const lengthValid = password.length >= 8 && password.length <= 12;
+        const lowerCaseValid = /[a-z]/.test(password);
+        const upperCaseValid = /[A-Z]/.test(password);
+        const numberValid = /\d/.test(password);
+        const specialCharValid = /[@#!]/.test(password);
 
-        if (!code) {
-            setErrorMessage("Por favor, ingresa el código de verificación."); // Si el campo está vacío
+        let errorMessage = "";
+        if (password.length > 12) {
+            errorMessage = "La contraseña no puede ser mayor de 12 caracteres.";
+        } else if (password.length < 8) {
+            errorMessage = "La contraseña debe tener al menos 8 caracteres.";
+        } else if (!lowerCaseValid || !upperCaseValid || !numberValid || !specialCharValid) {
+            errorMessage = "Debe contener una minúscula, una mayúscula, un número y un carácter especial (@, #, !).";
+        }
+        return errorMessage;
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        const passwordValidation = validatePassword(password);
+        if (passwordValidation) {
+            setPasswordError(passwordValidation);
             return;
         }
 
-        if (code.length !== 6) {
-            setErrorMessage("El código debe ser de exactamente 6 dígitos.");
+        if (password !== confirmPassword) {
+            setConfirmPasswordError("Las contraseñas no coinciden.");
             return;
         }
 
-        console.log("Código enviado para verificación");
+        try {
+            setIsSubmitting(true);
 
-        // Aquí puedes agregar la lógica para verificar el código
-        // Si la verificación es exitosa, redirigir al cambio de contraseña
-        setVerificationSuccess(true); // Simula que la verificación fue exitosa
+            const apiUrl = "http://localhost:5005/api/recovery/reset-password";
 
-        // Redirigir al formulario de cambio de contraseña
-        setTimeout(() => {
-            navigate("/change-password");
-        }, 1000); // Redirige después de 1 segundo
+            const response = await axios.post(apiUrl, {
+                email,
+                code,
+                newPassword: password,
+            });
+
+            if (response.status === 200) {
+                setShowModal(true);
+                setCodeError(null);
+                setPasswordError(null);
+                setConfirmPasswordError(null);
+            } else {
+                setCodeError("El código ingresado no es válido. Por favor, verifica e inténtalo nuevamente.");
+            }
+        } catch (error: any) {
+            console.error("Error al hacer la solicitud:", error);
+
+            if (error.response && error.response.data) {
+                const { message } = error.response.data;
+
+                if (message.includes("invalid code")) {
+                    setCodeError("El código ingresado no es válido. Por favor, verifica e inténtalo nuevamente.");
+                } else {
+                    setCodeError("Hubo un error al cambiar la contraseña. Intenta de nuevo.");
+                }
+            } else {
+                setCodeError("Hubo un error inesperado. Por favor, inténtalo más tarde.");
+            }
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const handleCodeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const value = event.target.value;
-
-        // Solo permite números y limita la longitud a 6 caracteres
         if (/^\d*$/.test(value) && value.length <= 6) {
-            setCode(value); // Actualiza el código solo si es válido
+            setCode(value);
+            setCodeError(null); // Limpiar error al editar
         }
     };
 
-    console.log(verificationSuccess);
+    const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        setPassword(value);
+        setPasswordError(null); // Limpiar error al editar
+    };
+
+    const handleConfirmPasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setConfirmPassword(e.target.value);
+        setConfirmPasswordError(null); // Limpiar error al editar
+    };
 
     return (
-        <AuthLayout showText={false}>
+        <AuthLayout showText={false} showBackButton={false}>
             <div className="text-center">
                 <p className="mb-4 text-sm text-gray-700">
                     Ingresa el código de verificación enviado<br />
-                    al correo <span className="font-semibold text-dark">correo@gmail.com</span>
+                    al correo <span className="font-semibold text-dark">{email}</span>
                 </p>
 
                 <form onSubmit={handleSubmit} className="flex flex-col items-center space-y-6">
@@ -84,50 +160,93 @@ const ForgotPasswordVerifyCode: React.FC = () => {
                             type="text"
                             placeholder="123456"
                             value={code}
-                            onChange={handleCodeChange} // Controla la entrada para asegurarse de que solo se ingresen números y con longitud máxima de 6
-                            maxLength={6} // Limita el input a 6 caracteres
-                            inputMode="numeric" // Sugerir teclado numérico en dispositivos móviles
-                            className="w-full px-6 py-3 mt-2 text-left border-2 rounded-full text-dark"
+                            onChange={handleCodeChange}
+                            maxLength={6}
+                            inputMode="numeric"
+                            className={`w-full px-6 py-3 mt-2 text-left border-2 rounded-full text-dark ${codeError ? "border-red-500" : ""}`}
                         />
+                        {codeError && <p className="mt-1 text-xs text-red-500">{codeError}</p>}
                     </div>
 
-                    {/* Mostrar el mensaje de error debajo del input */}
-                    {errorMessage && (
-                        <p className="mt-2 ml-2 text-sm text-left text-red-500">
-                            {errorMessage}
-                        </p>
-                    )}
+                    <div className="w-full">
+                        <label htmlFor="password" className="block text-sm font-medium text-left text-dark">
+                            Nueva contraseña
+                        </label>
+                        <input
+                            id="password"
+                            type="password"
+                            placeholder="Escribe tu nueva contraseña"
+                            value={password}
+                            onChange={handlePasswordChange}
+                            className={`w-full px-6 py-3 mt-2 text-left border-2 rounded-full text-dark ${passwordError ? "border-red-500" : ""}`}
+                        />
+                        {passwordError && <p className="mt-1 text-xs text-red-500">{passwordError}</p>}
+                    </div>
 
-                    {/* Contenedor de "¿No recibiste el código?" con cuenta regresiva */}
-                    <div className="resend-container">
-                        <span className="resend-text">¿No recibiste el código?</span>
+                    <div className="w-full">
+                        <label htmlFor="confirmPassword" className="block text-sm font-medium text-left text-dark">
+                            Confirmar contraseña
+                        </label>
+                        <input
+                            id="confirmPassword"
+                            type="password"
+                            placeholder="Repite tu nueva contraseña"
+                            value={confirmPassword}
+                            onChange={handleConfirmPasswordChange}
+                            className={`w-full px-6 py-3 mt-2 text-left border-2 rounded-full text-dark ${confirmPasswordError ? "border-red-500" : ""}`}
+                        />
+                        {confirmPasswordError && <p className="mt-1 text-xs text-red-500">{confirmPasswordError}</p>}
+                    </div>
+
+                    {/* Mensaje para reenviar código */}
+                    <div className="mt-6 text-sm">
+                        <p className="text-gray-700">¿No recibiste el codigo?</p>
                         <button
-                            type="button"
                             onClick={handleResend}
                             disabled={!resendEnabled}
-                            className="resend-button"
+                            className={`mt-2 px-6 py-3 rounded-full text-white ${resendEnabled ? "bg-secondary" : "bg-gray-400 cursor-not-allowed"}`}
                         >
-                            Reenviar ({timer === 60 ? "1:00" : `(${String(Math.floor(timer / 60)).padStart(2, "0")}:${String(timer % 60).padStart(2, "0")})`})
+                            {resendEnabled ? "Reenviar código" : `Reenviar en ${timer}s`}
                         </button>
+                        {errorResend && <p className="mt-1 text-xs text-red-500">{errorResend}</p>}
                     </div>
 
-                    {/* Barra de progreso naranja (debajo de la pregunta y botón) */}
-                    <div
-                        className={`progress-bar ${timer !== 60 ? "progress-bar-filled" : ""}`}
-                        style={{
-                            width: `${(60 - timer) * 100 / 60}%`, // La barra se llena conforme pasa el tiempo
-                        }}
-                    ></div>
-
-                    {/* Botón de Verificar Código */}
                     <button
                         type="submit"
-                        className="w-[250px] bg-primary hover:bg-tertiary text-white font-semibold py-5 rounded-xll shadow-[0px_4px_10px_rgba(0,0,0,0.4)] transition disabled:bg-brandGrey disabled:cursor-not-allowed"
+                        disabled={isSubmitting}
+                        className="w-full py-3 mt-6 text-white bg-brandYellow rounded-3xl"
                     >
-                        Verificar Código
+                        {isSubmitting ? "Cambiando..." : "Cambiar Contraseña"}
                     </button>
                 </form>
             </div>
+
+            {showModal && (
+                <div className="fixed inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50">
+                    <div className="bg-white rounded-[2rem] p-8 w-80 shadow-lg">
+                        <div className="flex flex-col items-center space-y-8">
+                            <div className="flex items-center justify-center w-24 h-24 rounded-full bg-brandYellow">
+                                <svg
+                                    className="text-white w-14 h-14"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="3"
+                                >
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                            <h2 className="text-2xl font-bold text-center">¡Contraseña cambiada con éxito!</h2>
+                            <button
+                                onClick={() => navigate("/login")}
+                                className="w-[200px] py-6 text-white bg-brandYellow rounded-3xl"
+                            >
+                                Ir a Iniciar Sesión
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </AuthLayout>
     );
 };
