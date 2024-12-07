@@ -1,11 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useContext } from "react";
 import "./AddExperience.css";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { addMonths } from "date-fns";
 import { experienceServices } from "../../services/addExperience.services";
 import SelectCords from "./Map/SelectionCoords";
-import { useContext } from "react";
 import { AuthContext } from "../../contexts/auth.context";
 import { useNavigate } from "react-router-dom";
 
@@ -13,10 +12,9 @@ type Coords = [number | undefined, number | undefined];
 type infoCoords = any;
 
 const AddExperience = () => {
-
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
-  
+
   const [images, setImages] = useState<File[]>([]);
   const [availability, setAvailability] = useState<{
     [date: string]: string[];
@@ -35,10 +33,70 @@ const AddExperience = () => {
     "Naturaleza",
     "Comida",
     "Tours",
-    "Nautico",
+    "Náutico",
     "Ciudad",
     "Eventos",
   ];
+
+  // Validar texto sin caracteres especiales
+  const isValidText = (text: string): boolean => {
+    const regex = /^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑ.,\s]+$/; // Permite letras, números y espacios
+    return regex.test(text);
+  };
+
+  // Validaciones
+  const validateForm = (): boolean => {
+    if (!title.trim()) {
+      setErrorMessage("El campo 'Título' es obligatorio.");
+      return false;
+    }
+    if (!isValidText(title)) {
+      setErrorMessage(
+        "El título solo puede contener letras, números y espacios."
+      );
+      return false;
+    }
+    if (!description.trim()) {
+      setErrorMessage("El campo 'Descripción' es obligatorio.");
+      return false;
+    }
+    if (!isValidText(description)) {
+      setErrorMessage(
+        "La descripción solo puede contener letras, números y espacios."
+      );
+      return false;
+    }
+
+    if(Object.keys(availability).length === 0){
+      setErrorMessage("Debe seleccionar al menos una fecha y una hora.");
+      return false;
+    }
+
+    if (!price || price <= 0) {
+      setErrorMessage("El campo 'Precio' debe ser mayor a 0.");
+      return false;
+    }
+    if (!capacity || capacity <= 0) {
+      setErrorMessage("El campo 'Capacidad' debe ser mayor a 0.");
+      return false;
+    }
+    if (tags.length === 0) {
+      setErrorMessage("Debe seleccionar al menos una categoría.");
+      return false;
+    }
+    if (!selectedDate) {
+      setErrorMessage("Debe seleccionar una fecha.");
+      return false;
+    }
+    if (!coords[0] || !coords[1]) {
+      setErrorMessage("Debe seleccionar una ubicación.");
+      return false;
+    }
+    return true;
+  };
+
+  const [errorMessage, setErrorMessage] = useState<string>(""); // Para mostrar el mensaje de error
+  const [showModal, setShowModal] = useState(false); // Para mostrar/ocultar el modal
 
   // Manejar la carga de imágenes
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -138,10 +196,22 @@ const AddExperience = () => {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-  
-    const location = [infoCoords.country, infoCoords.city, coords[0]?.toFixed(4), coords[1]?.toFixed(4)];
-  
+    e.preventDefault(); // Prevenir el envío del formulario
+
+    if (!validateForm()) {
+      setShowModal(true); // Mostrar el modal si la validación falla
+      return; // No continuar si la validación falla
+    }
+
+    // Si la validación pasa, puedes hacer la llamada al backend
+    const location = [
+      infoCoords.country,
+      infoCoords.city,
+      coords[0]?.toFixed(4),
+      coords[1]?.toFixed(4),
+    ];
+
+
     const payload = {
       title,
       description,
@@ -152,15 +222,15 @@ const AddExperience = () => {
       tags,
       capacity,
     };
-  
-    console.log("Payload enviado al backend:", payload);
-  
+
+    
+    console.log(payload)
+
     try {
       const response = await experienceServices.addExperience(payload);
       console.log("Respuesta del backend:", response.data);
       alert("¡Experiencia añadida con éxito!");
-      navigate('/user-profile')
-
+      navigate("/user-profile");
     } catch (error) {
       console.error("Error al enviar los datos al backend:", error);
       alert("Hubo un error al añadir la experiencia. Inténtalo nuevamente.");
@@ -191,17 +261,34 @@ const AddExperience = () => {
     const fetchLocationData = async () => {
       if (coords[0] !== undefined && coords[1] !== undefined) {
         const data = await reverseGeocode(coords[0], coords[1]);
-        
+
         setInfoCoords(data);
-        
       }
     };
 
     fetchLocationData();
   }, [coords]); // Ejecutar cuando coords cambie
 
+  const closeModal = () => {
+    setShowModal(false);
+    setErrorMessage(""); // Limpiar el mensaje de error al cerrar el modal
+  };
+
   return (
     <form onSubmit={handleSubmit} className="mb-5">
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="p-4 bg-white rounded-lg shadow-lg w-80">
+            <p className="mb-4 font-medium text-primary">{errorMessage}</p>
+            <button
+              onClick={closeModal}
+              className="px-4 py-2 text-white rounded-md bg-primary hover:bg-orange"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
       {/* Sección de imágenes */}
       <div className="image-section">
         <label className="label-1">Añadir experiencia</label>
@@ -270,24 +357,26 @@ const AddExperience = () => {
           className="titulo-input"
           placeholder="Escribe el Titulo de la Experiencia"
           value={title}
+          maxLength={20}
           onChange={(e) => setTitle(e.target.value)}
         />
       </div>
 
       {/* Descripción */}
       <div className="content">
-        <h1 className="label">Descripcion</h1>
+        <h1 className="label">Descripción</h1>
         <textarea
           className="description-input"
-          placeholder="Escribe una descripcion de la experiencia"
+          placeholder="Escribe una descripción de la experiencia"
           value={description}
+          maxLength={250}
           onChange={(e) => setDescription(e.target.value)}
         />
       </div>
-      <div className="px-3 form-grou">
-        <label className="label">Categorias</label>
+      <div className="px-3 form-group">
+        <label className="label">Categorías</label>
         <select value="" onChange={handleTagSelect} className="tags-select">
-          <option value="">Selecciona una Categoria</option>
+          <option value="">Selecciona una Categoría</option>
           {availableTags.map((tag, index) => (
             <option key={index} value={tag}>
               {tag}
@@ -309,7 +398,6 @@ const AddExperience = () => {
           ))}
         </div>
       </div>
-
 
       {/* Disponibilidad */}
       <div className="form-group">
@@ -386,12 +474,22 @@ const AddExperience = () => {
       {/* Otros campos */}
       <div className="px-3 form-group">
         <label className="label">Capacidad</label>
-        <input onChange={(e) => setCapacity(Number(e.target.value))} type="number" className="input" placeholder="Ejemplo: 2" />
+        <input
+          onChange={(e) => setCapacity(Number(e.target.value))}
+          type="number"
+          className="input"
+          placeholder="Ejemplo: 2"
+          min="1"
+        />
       </div>
-      
+
       <div className="mb-4">
         <h1 className="label">Ubicación</h1>
-      <SelectCords coords={coords} setCoords={setCoords} infoCoords={infoCoords} />
+        <SelectCords
+          coords={coords}
+          setCoords={setCoords}
+          infoCoords={infoCoords}
+        />
       </div>
 
       <div className="px-3 form-group">
@@ -402,14 +500,16 @@ const AddExperience = () => {
             type="number"
             className="input price-field"
             placeholder="Ejemplo: 20"
+            min="0"
+            value={price || ""}
             onChange={(e) => setPrice(Number(e.target.value))}
           />
         </div>
       </div>
       {/* Etiquetas (Lista desplegable) */}
-     
+
       <div className="button-container">
-        <button type="submit" className="submit-button">
+        <button onClick={() => console.log(availability)} type="submit" className="submit-button">
           Añadir experiencia
         </button>
       </div>
